@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>پایش زنده خانه بازی - نسخه آزمایشی</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #38bdf8;
+      --success: #22c55e;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; font-family: Tahoma, sans-serif; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+    }
+    .grid {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+    .box {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.08);
+    }
+    h2 { margin-top: 0; font-size: 1.15rem; color: var(--accent); }
+    label { display: block; margin: 10px 0 6px; font-size: .9rem; color: var(--muted); }
+    input, select, button {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.15);
+      font-size: .95rem;
+    }
+    input, select {
+      background: #0f172a;
+      color: var(--text);
+    }
+    button {
+      cursor: pointer;
+      font-weight: bold;
+      border: none;
+      margin-top: 10px;
+      transition: transform .1s ease, opacity .2s ease;
+    }
+    button:active { transform: scale(0.98); }
+    .btn-primary { background: var(--accent); color: #06202a; }
+    .btn-approve { background: var(--success); color: #052e16; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: .8rem;
+      margin-bottom: 12px;
+      background: rgba(148,163,184,.2);
+    }
+    .cam-screen {
+      margin-top: 14px;
+      background: #020617;
+      border-radius: 12px;
+      padding: 18px;
+      min-height: 190px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      border: 1px dashed rgba(255,255,255,.2);
+      position: relative;
+      overflow: hidden;
+    }
+    .live-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--danger);
+      display: inline-block;
+      margin-left: 6px;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink { 50% { opacity: .25; } }
+    .req-card {
+      background: #0f172a;
+      border-radius: 12px;
+      padding: 12px;
+      margin-top: 12px;
+      border: 1px solid rgba(255,255,255,.1);
+    }
+    .timer {
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: var(--warn);
+      margin-top: 8px;
+    }
+    .hint { font-size: .8rem; color: var(--muted); margin-top: 10px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="grid">
+    <!-- پنل مادر / کاربر -->
+    <div class="box">
+      <h2>📱 نمای گوشی مادر (پس از اسکن بارکد)</h2>
+      <div id="motherStatus" class="status-badge">آماده ثبت درخواست</div>
+
+      <div id="requestForm">
+        <label>نام مادر یا نام کودک</label>
+        <input id="parentName" type="text" placeholder="مثلاً: مادرِ آوا" />
+
+        <label>کد پذیرش / شماره قبض</label>
+        <input id="ticketCode" type="text" placeholder="مثلاً: 104" />
+
+        <button class="btn-primary" onclick="sendRequest()">ارسال درخواست مشاهده دوربین</button>
+      </div>
+
+      <div class="cam-screen" id="camScreen">
+        <div>🔒 تصویر دوربین فعلاً قفل است.</div>
+        <div class="hint">پس از تأیید مدیریت، پخش زنده و تایمر معکوس اینجا نمایش داده می‌شود.</div>
+      </div>
+    </div>
+
+    <!-- پنل مدیریت -->
+    <div class="box">
+      <h2>🛡️ پنل ادمین خانه بازی (شبیه‌ساز مدیریت)</h2>
+      <div class="hint">در نسخه واقعی، این درخواست‌ها با Realtime به پنل شما می‌آید و روی گوشی مادر بدون نیاز به رفرش باز می‌شود.</div>
+
+      <div id="adminRequests">
+        <div class="hint">هنوز درخواستی ثبت نشده است. سمت راست/چپ یک درخواست بفرستید تا ببینید چطور ظاهر می‌شود.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // در این نسخه تستی، وضعیت را در حافظه مرورگر نگه می‌داریم
+    // در نسخه واقعی، این بخش جای خود را به دیتابیس و Realtime می‌دهد
+    let currentSession = null;
+    let countdownInterval = null;
+
+    function sendRequest() {
+      const name = document.getElementById("parentName").value.trim() || "مادر ناشناس";
+      const ticket = document.getElementById("ticketCode").value.trim() || "---";
+
+      currentSession = {
+        id: Date.now(),
+        name,
+        ticket,
+        status: "pending", // pending | active | expired | revoked
+        remainingSeconds: 0
+      };
+
+      document.getElementById("requestForm").style.display = "none";
+      document.getElementById("motherStatus").textContent = "⏳ در انتظار تأیید ادمین...";
+      document.getElementById("motherStatus").style.background = "rgba(245,158,11,.2)";
+
+      document.getElementById("camScreen").innerHTML = `
+        <div>⏳ درخواست شما برای مدیریت ارسال شد...</div>
+        <div class="hint">لطفاً کمی صبر کنید تا مجوز تماشا صادر شود.</div>
+      `;
+
+      renderAdmin();
+    }
+
+    function renderAdmin() {
+      const container = document.getElementById("adminRequests");
+      if (!currentSession) {
+        container.innerHTML = `<div class="hint">درخواست فعالی وجود ندارد.</div>`;
+        return;
+      }
+
+      const s = currentSession;
+      let actionsHtml = "";
+
+      if (s.status === "pending") {
+        actionsHtml = `
+          <label>مدت زمان مجاز مشاهده (برای تست سریع، ثانیه هم گذاشتیم)</label>
+          <select id="durationSelect">
+            <option value="20">۲۰ ثانیه (تست سریع قطع خودکار)</option>
+            <option value="3600">۱ ساعت (۶۰ دقیقه)</option>
+            <option value="7200">۲ ساعت (۱۲۰ دقیقه)</option>
+          </select>
+          <button class="btn-approve" onclick="approveSession()">✅ تأیید و فعال‌سازی دسترسی</button>
+        `;
+      } else if (s.status === "active") {
+        actionsHtml = `
+          <div class="timer" id="adminTimer">زمان باقی‌مانده: ${formatTime(s.remainingSeconds)}</div>
+          <button class="btn-danger" onclick="revokeSession('قطع فوری توسط ادمین')">⛔ قطع فوری دسترسی</button>
+        `;
+      } else {
+        actionsHtml = `
+          <div class="hint">وضعیت فعلی: <strong>${s.status === "expired" ? "پایان زمان مجاز" : "قطع‌شده توسط ادمین"}</strong></div>
+          <button class="btn-primary" onclick="resetDemo()">🔄 شروع تست مجدد</button>
+        `;
+      }
+
+      container.innerHTML = `
+        <div class="req-card">
+          <div><strong>درخواست‌کننده:</strong> ${s.name}</div>
+          <div><strong>کد پذیرش:</strong> ${s.ticket}</div>
+          ${actionsHtml}
+        </div>
+      `;
+    }
+
+    function approveSession() {
+      if (!currentSession) return;
+      const sec = parseInt(document.getElementById("durationSelect").value, 10);
+      currentSession.status = "active";
+      currentSession.remainingSeconds = sec;
+
+      document.getElementById("motherStatus").textContent = "🟢 دسترسی فعال - پخش زنده";
+      document.getElementById("motherStatus").style.background = "rgba(34,197,94,.2)";
+
+      startCountdown();
+      renderMotherLive();
+      renderAdmin();
+    }
+
+    function startCountdown() {
+      clearInterval(countdownInterval);
+      countdownInterval = setInterval(() => {
+        if (!currentSession || currentSession.status !== "active") {
+          clearInterval(countdownInterval);
+          return;
+        }
+        currentSession.remainingSeconds -= 1;
+
+        const mTimer = document.getElementById("motherTimer");
+        const aTimer = document.getElementById("adminTimer");
+        if (mTimer) mTimer.textContent = "زمان باقی‌مانده: " + formatTime(currentSession.remainingSeconds);
+        if (aTimer) aTimer.textContent = "زمان باقی‌مانده: " + formatTime(currentSession.remainingSeconds);
+
+        if (currentSession.remainingSeconds <= 0) {
+          revokeSession("زمان مجاز مشاهده به پایان رسید");
+        }
+      }, 1000);
+    }
+
+    function revokeSession(reason) {
+      clearInterval(countdownInterval);
+      if (!currentSession) return;
+      currentSession.status = reason.includes("پایان") ? "expired" : "revoked";
+
+      document.getElementById("motherStatus").textContent = "🔴 دسترسی قطع شد";
+      document.getElementById("motherStatus").style.background = "rgba(239,68,68,.2)";
+
+      document.getElementById("camScreen").innerHTML = `
+        <div>⛔ پخش تصویر متوقف شد</div>
+        <div class="hint">${reason}. در صورت نیاز مجدداً درخواست دهید.</div>
+      `;
+
+      renderAdmin();
+    }
+
+    function renderMotherLive() {
+      const cam = document.getElementById("camScreen");
+      cam.innerHTML = `
+        <div><span class="live-dot"></span><strong>دوربین ۱ - فضای بازی اصلی (شبیه‌سازی زنده)</strong></div>
+        <div class="hint">در نسخه واقعی، اینجا فریم‌های HLS/WebRTC دوربین خانه بازی نمایش داده می‌شود.</div>
+        <div class="timer" id="motherTimer">زمان باقی‌مانده: ${formatTime(currentSession.remainingSeconds)}</div>
+      `;
+    }
+
+    function resetDemo() {
+      clearInterval(countdownInterval);
+      currentSession = null;
+      document.getElementById("requestForm").style.display = "block";
+      document.getElementById("motherStatus").textContent = "آماده ثبت درخواست";
+      document.getElementById("motherStatus").style.background = "rgba(148,163,184,.2)";
+      document.getElementById("camScreen").innerHTML = `
+        <div>🔒 تصویر دوربین فعلاً قفل است.</div>
+        <div class="hint">پس از تأیید مدیریت، پخش زنده و تایمر معکوس اینجا نمایش داده می‌شود.</div>
+      `;
+      renderAdmin();
+    }
+
+    function formatTime(totalSec) {
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      return [h, m, s].map(v => String(v).padStart(2, "0")).join(":");
+    }
+  </script>
+</body>
+</html>
